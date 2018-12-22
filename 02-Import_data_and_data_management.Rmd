@@ -1,22 +1,18 @@
 # Import data and data management {#import_data_management}
 
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+```{r setup}
 
-library(RCurl)
-library(MASS)
-library(glmnet)
-library(caret)
-library(survey)
-library(readxl)
-library(stringr)
-library(forcats)
-library(foreign)
-library(magrittr)
-library(tidyverse)
-options(scipen = 9999)
-options(dplyr.width = Inf)
+paquetes <- c("RCurl", "MASS", "glmnet", "caret", "survey", "readxl", "tidyverse", "foreign", "magrittr", "essurvey")
+
+for (i in seq_along(paquetes)) {
+  if (!require(paquetes[[i]], character.only = TRUE)) 
+  {install.packages(paquetes[[i]])}
+  require(paquetes[[i]], character.only = TRUE)
+}
 
 
+options(scipen = 9999, dplyr.width = Inf)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
 set.seed(456162)
 
 ```
@@ -26,27 +22,31 @@ We first need to import data into R. In this guide we will use UK data from the 
 For this guide we will use the following 7th ESS datafiles in SPSS ('.sav') format: 
 
   * [sample data (SDDF), edition 1.1](http://www.europeansocialsurvey.org/download.html?file=ESS7SDDFe01_1&y=2014), which contains the  probability of being sampled for all respondents and non-respondents invited to the survey;  
-  * [the data from Contact forms, edition 2.1](http://www.europeansocialsurvey.org/download.html?file=ESS7CFe02_1&y=2014), which provides information about the process of data collection (e.g. number of times the person was approached for a response, ID of interviewer in each approach, conditions of the house/area where the potential respondent lived.). We will call this data the *'paradata'* of the survey;
+  * [the data from Contact forms, edition 2.1](http://www.europeansocialsurvey.org/download.html?file=ESS7CFe02_1&y=2014), which provides information about the process of data collection (e.g. number of times the person was approached for a response, ID of interviewer in each approach, conditions of the house/area where the potential respondent lived.). We will call this data the *'paradata'* or *'metadata'* of the survey;
   * [the integrated interviewer data file, edition2.1](http://www.europeansocialsurvey.org/download.html?file=ESS7INTe02_1&y=2014). These are the responses to the survey. 
 
 The following sections explain data import, selection, merging and recoding. Readers who are not interested in technical details about datasets can skip them and jump directly into [exploration and presentation of the data](#exploring and presenting the dataset)
 
 ### Import data
 
-The following chunk of code loads the data sets from a *data* folder in the working directory. The sample data file is stored into the *sample.data* 'data_frame' object. The contact forms information is stored into the *paradata* folder. Survey responses from the integrated interviewer file are saved in the *responses* object. We also store the weight variables included in the integrated interviewer file in the *original.weights* data_frame.
+The following chunk of code loads the data sets from a *data* folder in the working directory. The sample data file is stored into the *sample_data* 'data_frame' object. The contact forms information is stored into the *paradata* folder. Survey responses from the integrated interviewer file are saved in the *responses* object. We also store the weight variables included in the integrated interviewer file in the *original_weights* data_frame.
 
-```{r echo=TRUE, warning=FALSE, message=FALSE, cache=TRUE}
+```{r data_files, cache=TRUE}
 
-sample.data <- read.spss("data/ESS7SDDFe1_1.sav", to.data.frame = T)  %>%
+set_email("user@email.com")
+download_country("United Kingdom", 7, format = "spss")
+
+sample_data <- read.spss("data/ESS7SDDFe1_1.sav", to.data.frame = T)  %>%
   filter(cntry == "United Kingdom")
 
 paradata <- read.spss("data/ess7CFe02_1.sav", to.data.frame = T) %>%
   filter(cntry == "United Kingdom") 
 
-responses <- read.spss("data/ESS7e02_1.sav", to.data.frame = T) %>%
+responses <- read.spss("data/ESS7INTe02_1.sav", to.data.frame = T) %>%
   filter(cntry == "United Kingdom") 
 
-original.weights <- responses %>% select(idno ,dweight, pspwght, pweight)
+original_weights <- responses %>% 
+  dplyr::select(idno, dweight, pspwght, pweight)
 
 ```
 
@@ -54,27 +54,18 @@ original.weights <- responses %>% select(idno ,dweight, pspwght, pweight)
 
 Once the data has been read into R, we select the variables we are going to use in our analysis. Selecting variables is a good practice as the ESS files contain much more information that we need for this example. This will allow us to easily find and see the data that is important for us in this guide. Here we just write the names of the variables we intend to use and we will later explain the content of these in more substantial terms.
 
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+```{r data_vars}
 
-vars.sample.data <- c("idno", "psu", "prob")
+vars_sample_data <- c("idno", "psu", "prob")
 
-vars.paradata <- c("idno", "typesamp", "interva", "telnum", 
-                   "agea_1", "gendera1", "type", "access", 
+vars_paradata <- c("idno", "typesamp", "interva", "telnum", "agea_1", "gendera1", "type", "access",
                    "physa", "littera", "vandaa")
 
-resp.id <- c("idno")
+resp_id <- c("idno")
 
-resp.y <- c("cgtsmke", "cgtsday",
-         "alcfreq", "alcwkdy", "alcwknd")
+resp_x <- c("vote", "prtvtbgb", "prtclbgb", "prtdgcl", "ctzcntr", "ctzshipc", "brncntr","cntbrthc", "gndr", "agea", "hhmmb","eisced", "region", "pdwrk", "edctn", "uempla", "uempli", "rtrd", "wrkctra", "hinctnta")
 
-resp.x <- c("vote", "prtvtbgb",
-            "prtclbgb", "prtdgcl",
-            "ctzcntr", "ctzshipc",
-         "brncntr","cntbrthc",
-         "gndr", "agea", "hhmmb","eisced", "region",
-         "pdwrk", "edctn", "uempla", "uempli", "rtrd",
-         "wrkctra", "hinctnta")
-
+resp_y <- c("cgtsmke", "cgtsday", "alcfreq", "alcwkdy", "alcwknd")
 ```
 
 We will also keep the variable labels from the SPSS (.sav) file, although these are not so common in R.
@@ -96,17 +87,19 @@ attributes(responses)$variable.labels %>%
 
 Now we do the selection of variables from the three data sets using the names of the variables written a couple of code chunks ago. 
 
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+```{r vars_selection}
 
-sample.data %<>% 
-  .[vars.sample.data]
+sample_data <- 
+  sample_data  %>%
+  select(vars_sample_data)
 
-paradata %<>%
-  .[vars.paradata]
+paradata <- 
+  paradata %>% 
+    select(vars_paradata) 
 
-responses %<>%
-  .[which(names(responses) %in% c(resp.id, resp.y, resp.x))]
-
+responses <- 
+  responses %>% 
+  select(resp_id, resp_x, resp_y)
 ```
 
 
